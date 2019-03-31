@@ -29,7 +29,218 @@ import (
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"gopkg.in/yaml.v2"
 )
+
+// tweak NewDevelopmentConfig
+func Example_wataash_zap_config() {
+	outOrig := os.Stdout
+	defer func() { os.Stdout = outOrig }()
+	os.Stdout = os.Stderr
+
+	// logger, _ := zap.NewDevelopment()
+	// is:
+	cfg := zap.Config{
+		Level: zap.NewAtomicLevelAt(zap.DebugLevel),
+
+		Development: true, // true: stack trace on warn
+		// Development: false, // true: stack trace on error
+
+		// DisableCaller: true,  // INFO	foo info
+		// DisableCaller: false, // INFO	zap/example_test.go:117	foo info
+
+		// DisableStacktrace: false,
+
+		// same log only 2/sec ?
+		// Sampling: &zap.SamplingConfig{
+		// 	Initial:    2,
+		// 	Thereafter: 100, // and re-logging after same 100 received?
+		// },
+
+		// Encoding: "console", // 14:56:12	INFO	zap/example_test.go:105	foo
+		Encoding: "json",
+		// {"L":"INFO","T":"14:56:19","C":"zap/example_test.go:105","M":"foo"}
+		// sugar.warn:
+		// {"L":"WARN","T":"14:56:19","C":"zap/example_test.go:106","M":"foo",
+		//  "S":"go.uber.org/zap_test.ExampleWataashZap\n
+		//         \t/Users/wsh/go/src/go.uber.org/zap/example_test.go:106\n
+		//       testing.runExample\n
+		//         \t/Users/wsh/go/src/go.googlesource.com/go/src/testing/example.go:121\n
+		//       ..."
+		// }
+
+		EncoderConfig: zapcore.EncoderConfig{
+			// Keys can be anything except the empty string.
+			TimeKey:       "T",
+			LevelKey:      "L",
+			NameKey:       "N",
+			CallerKey:     "C",
+			MessageKey:    "M",
+			StacktraceKey: "S",
+
+			LineEnding: zapcore.DefaultLineEnding, // \n
+			// LineEnding: "----------",
+
+			EncodeLevel: zapcore.CapitalLevelEncoder,
+			// zapcore.LevelEncoder
+			// EncodeLevel: zapcore.LowercaseLevelEncoder,      // info
+			// EncodeLevel: zapcore.LowercaseColorLevelEncoder, // info (blue)
+			// EncodeLevel: zapcore.CapitalLevelEncoder,        // INFO
+			// EncodeLevel: zapcore.CapitalColorLevelEncoder,   // INFO (blue)
+
+			// EncodeTime: zapcore.ISO8601TimeEncoder,
+			// zapcore.TimeEncoder
+			// EncodeTime: zapcore.EpochTimeEncoder,       // 1.555307003305727e+09
+			// EncodeTime: zapcore.EpochMillisTimeEncoder, // 1.555307012028605e+12
+			// EncodeTime: zapcore.EpochNanosTimeEncoder,  // 1555307020546399000
+			// EncodeTime: zapcore.ISO8601TimeEncoder,     // 2019-04-15T14:35:32.706+0900
+			// EncodeTime: nil,                            // (none)
+			EncodeTime: func(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
+				enc.AppendString(t.Format("15:04:05"))
+			},
+
+			EncodeDuration: zapcore.StringDurationEncoder,
+			// zapcore.DurationEncoder
+			// EncodeDuration: zapcore.SecondsDurationEncoder, // ?
+			// EncodeDuration: zapcore.NanosDurationEncoder,   // ?
+			// EncodeDuration: zapcore.StringDurationEncoder,  // ?
+
+			EncodeCaller: zapcore.ShortCallerEncoder,
+		},
+
+		OutputPaths: []string{"stderr"},
+		// OutputPaths: []string{"stderr", "stderr", "stderr", "stdout", "/tmp/wataash/zap.debug"},
+
+		ErrorOutputPaths: []string{"stderr"},
+
+		// InitialFields: map[string]interface{}{"url": "http://www.empty.com"},
+	}
+	// TODO: yaml, json config
+	logger, err := cfg.Build()
+	if err != nil {
+		panic(err)
+	}
+	defer logger.Sync()
+	sugar := logger.Sugar()
+
+	sugar.Debugf("foo debug") // {"L":"DEBUG","T":"15:33:15","C":"zap/example_test.go:115","M":"foo debug"}
+	sugar.Infof("foo info")   // {"L":"INFO","T":"15:33:15","C":"zap/example_test.go:116","M":"foo info"}
+	sugar.Warnf("foo warn")   // {"L":"WARN","T":"15:34:23","C":"zap/example_test.go:117","M":"foo warn","S":"go.uber.org/zap_test.Example_..."}
+	sugar.Errorf("foo error") // {"L":"ERROR","T":"15:34:31","C":"zap/example_test.go:118","M":"foo error","S":"go.uber.org/zap_test.Example_..."}
+
+	// {"L":"INFO","T":"15:53:55","C":"zap/example_test.go:133","M":"Failed to fetch URL.","url":"http://example.com","attempt":3,"backoff":"1s"}
+	sugar.Infow("Failed to fetch URL.",
+		"url", "http://example.com",
+		"attempt", 3,
+		"backoff", time.Second,
+	)
+
+	// // Output:
+}
+
+func Example_wataash_zap_product() {
+	outOrig := os.Stdout
+	defer func() { os.Stdout = outOrig }()
+	os.Stdout = os.Stderr
+
+	// logger, err := zap.NewProduction()
+	// is:
+
+	cfg := zap.Config{
+		Level:       zap.NewAtomicLevelAt(zap.InfoLevel),
+		Development: false,
+		Sampling: &zap.SamplingConfig{
+			Initial:    100,
+			Thereafter: 100,
+		},
+		Encoding: "json",
+		EncoderConfig: zapcore.EncoderConfig{
+			TimeKey:        "ts",
+			LevelKey:       "level",
+			NameKey:        "logger",
+			CallerKey:      "caller",
+			MessageKey:     "msg",
+			StacktraceKey:  "stacktrace",
+			LineEnding:     zapcore.DefaultLineEnding,
+			EncodeLevel:    zapcore.LowercaseLevelEncoder,
+			EncodeTime:     zapcore.EpochTimeEncoder,
+			EncodeDuration: zapcore.SecondsDurationEncoder,
+			EncodeCaller:   zapcore.ShortCallerEncoder,
+		},
+		OutputPaths:      []string{"stderr"},
+		ErrorOutputPaths: []string{"stderr"},
+	}
+	logger, err := cfg.Build()
+	if err != nil {
+		panic(err)
+	}
+
+	defer logger.Sync()
+
+	sugar := logger.Sugar()
+
+	// {"level":"info","ts":1555309053.257174,"caller":"zap/example_test.go:59","msg":"foo"}
+	// {"level":"warn","ts":1555309053.257233,"caller":"zap/example_test.go:60","msg":"foo"}
+	// {"level":"error","ts":1555309053.2572422,"caller":"zap/example_test.go:61","msg":"foo",
+	//  "stacktrace":
+	//  "go.uber.org/zap_test.Example_wataash_zap_product\n
+	//    \t/Users/wsh/go/src/go.uber.org/zap/example_test.go:61\n
+	//  testing.runExample\n
+	//    \t/Users/wsh/go/src/go.googlesource.com/go/src/testing/example.go:121\n
+	//  ..."
+	// }
+	sugar.Info("foo")
+	sugar.Warn("foo")
+	sugar.Error("foo")
+
+	// // Output:
+}
+
+// for cli applications
+// * stacktrace: error, fatal (by Development: false)
+// * --log (default: ["stdout"]) colored, hh:MM:ss
+// * --log-json (default: [])
+// * "stdout" and "stderr"
+// TODO: stackdriver sentry rollbar
+//       https://github.com/blendle/zapdriver
+func Example_wataash_zap_cli() {
+	zapCfg := zap.NewProductionConfig()
+	zapCfg.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
+	zapCfg.DisableCaller = false
+	zapCfg.DisableStacktrace = false
+	zapCfg.Sampling = nil
+	zapCfg.Encoding = ""
+
+	optLogs := []string{"stderr", "/dev/stderr"}
+	zapCfg.Encoding = "console"
+	zapCfg.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
+	zapCfg.EncoderConfig.EncodeTime =
+		func(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
+			enc.AppendString(t.Format("15:04:05"))
+		}
+	zapCfg.OutputPaths = optLogs
+	loggerConsole, err := zapCfg.Build()
+	sugarConsole := loggerConsole.Sugar()
+	_ = err
+
+	optLogsJson := []string{"stderr"}
+	zapCfg.Encoding = "json"
+	zapCfg.EncoderConfig.EncodeLevel = zapcore.CapitalLevelEncoder
+	zapCfg.EncoderConfig.EncodeTime = zapcore.EpochTimeEncoder
+	zapCfg.OutputPaths = optLogsJson
+	loggerJson, err := zapCfg.Build()
+	sugarJson := loggerJson.Sugar()
+	_ = err
+
+	sugarConsole.Warnw("foo")
+	sugarJson.Warnw("foo")
+	sugarConsole.Errorw("foo")
+	sugarJson.Errorw("foo")
+
+	// TODO: merge them with zapcore.NewTee
+
+	// // Output:
+}
 
 func Example_presets() {
 	// Using zap's preset constructors is the simplest way to get a feel for the
@@ -91,6 +302,25 @@ func Example_basicConfiguration() {
 	if err := json.Unmarshal(rawJSON, &cfg); err != nil {
 		panic(err)
 	}
+
+	// same in yaml
+	// spaces for indent are invalid...
+	rawYaml := []byte(`
+level: debug
+encoding: json
+outputPaths: [stdout, /tmp/logs]
+errorOutputPaths: [stderr]
+initialFields:
+  foo: bar
+encoderConfig:
+  messageKey: message
+  levelKey: level
+  levelEncoder: lowercase
+`)
+	if err := yaml.Unmarshal(rawYaml, &cfg); err != nil {
+		panic(err)
+	}
+
 	logger, err := cfg.Build()
 	if err != nil {
 		panic(err)
@@ -103,6 +333,10 @@ func Example_basicConfiguration() {
 }
 
 func Example_advancedConfiguration() {
+	outOrig := os.Stdout
+	defer func() { os.Stdout = outOrig }()
+	os.Stdout = os.Stderr
+
 	// The bundled Config struct only supports the most common configuration
 	// options. More complex needs, like splitting logs between multiple files
 	// or writing to non-file outputs, require use of the zapcore package.
@@ -151,6 +385,7 @@ func Example_advancedConfiguration() {
 	logger := zap.New(core)
 	defer logger.Sync()
 	logger.Info("constructed a logger")
+	// // Output:
 }
 
 func ExampleNamespace() {

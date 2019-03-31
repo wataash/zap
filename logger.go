@@ -250,6 +250,8 @@ func (log *Logger) Core() zapcore.Core {
 
 func (log *Logger) clone() *Logger {
 	copy := *log
+	// s := fmt.Sprintf("%p %p", log, &copy) // 0xc0000b2300 0xc0000b2360
+	// _ = s
 	return &copy
 }
 
